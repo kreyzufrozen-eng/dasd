@@ -1,3 +1,16 @@
+{
+	# HTTP/3 runs over UDP/443, which ufw never had a rule for (only
+	# 443/tcp) — the firewall silently drops it. Caddy still advertised it
+	# via `alt-svc`, so QUIC-eager clients (Chrome in particular) raced a
+	# QUIC attempt against every request, and that attempt just hung until
+	# the browser's own timeout instead of falling back to HTTP/2 quickly,
+	# making the whole site appear to hang indefinitely. Simpler to turn
+	# H3 off than to also manage a UDP firewall rule for it.
+	servers {
+		protocols h1 h2
+	}
+}
+
 readhunter.ru, www.readhunter.ru {
 	# The frontend has no `'use server'` actions anywhere in its code, so a
 	# request carrying Next-Action is never legitimate here — only scanners
