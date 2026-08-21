@@ -1,0 +1,7 @@
+readhunter.ru, www.readhunter.ru {
+	reverse_proxy frontend:3000
+}
+
+api.readhunter.ru {
+	reverse_proxy backend:8000
+}

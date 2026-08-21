@@ -1,0 +1,10 @@
+# Local frontend ignores (the repo root .gitignore already covers
+# frontend/node_modules, frontend/.next and frontend/out, but this file is
+# kept so `frontend/` is self-contained if it's ever split into its own repo).
+node_modules/
+.next/
+out/
+.env.local
+.env*.local
+npm-debug.log*
+.DS_Store

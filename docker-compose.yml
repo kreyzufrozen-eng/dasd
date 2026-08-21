@@ -1,0 +1,156 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leadhunter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadhunter}
+      POSTGRES_DB: ${POSTGRES_DB:-leadhunter}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Per-service memory caps: the 2026-08-20 outage was an OOM-killed
+    # container dragging the whole 2GB host into unresponsiveness (kernel
+    # picked an arbitrary victim, not necessarily the actual runaway
+    # process). Capping each service means a leak/spike gets killed and
+    # restarted (`restart: unless-stopped`) in isolation instead of
+    # starving sshd/the kernel itself. Add ./swapfile (see deploy notes)
+    # as a second line of defense for legitimate temporary spikes.
+    mem_limit: 640m
+    # No `ports:` published at all — this used to be "127.0.0.1:5432:5432",
+    # but Docker's iptables integration adds a DOCKER-chain FORWARD rule
+    # for published ports that accepts external traffic straight to the
+    # container regardless of the "127.0.0.1" prefix (a well-known Docker
+    # gotcha: that prefix only restricts docker-proxy's own host socket,
+    # not routed/forwarded traffic). Verified on the deployed VPS: with
+    # that binding, port 5432 was still reachable from the public
+    # internet. Not publishing the port at all sidesteps the whole issue —
+    # other containers still reach Postgres fine via the Docker network
+    # (service name `postgres`, unaffected). For psql from your own
+    # machine, use `docker compose exec postgres psql ...` or an SSH
+    # tunnel (`ssh -L 5432:localhost:5432 ...`).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leadhunter}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ./backend
+    # Runs schema migrations, then seeds the keyword pre-filter list
+    # (idempotent — safe to re-run on every `up`, existing keywords are
+    # skipped) so the pipeline has something to match against immediately.
+    command: sh -c "alembic upgrade head && python -m app.db.seed"
+    env_file:
+      - .env
+    mem_limit: 384m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    mem_limit: 384m
+    # No `ports:` published — Caddy/TLS is confirmed working end-to-end
+    # (see Caddyfile), so the direct-port fallback from setup is no
+    # longer needed. Caddy reaches this over the internal Docker network
+    # (service name `backend`).
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    build:
+      context: ./backend
+    command: python -m app.workers.pipeline_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    mem_limit: 512m
+    volumes:
+      # Persists the Telethon session file across restarts. Run
+      # `docker compose run --rm worker python -m app.workers.telegram_login`
+      # once to authenticate interactively before the first `up`.
+      - telegram_sessions:/app/sessions
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  bot:
+    build:
+      context: ./backend
+    command: python -m app.bot.run_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      # Next.js inlines NEXT_PUBLIC_* into the client bundle at build time,
+      # not at container start — so this must be a build arg, not just the
+      # `environment:` below (that only affects the running process, e.g.
+      # server-side code, not the already-built client JS).
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        # Same build-time-inlining caveat as NEXT_PUBLIC_API_URL above.
+        # Note this DOES end up readable in the browser's JS bundle/network
+        # tab — it stops opportunistic scanners hitting the bare API
+        # directly, it is not a secret from someone inspecting this
+        # frontend itself. That's an accepted trade-off for a single-user
+        # internal dashboard; a fully hidden key would need the frontend
+        # to proxy API calls server-side instead of calling the backend
+        # directly from the browser.
+        NEXT_PUBLIC_API_KEY: ${API_KEY}
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@readhunter.example}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    mem_limit: 384m
+    # No `ports:` published — same reasoning as `backend` above.
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  postgres_data:
+  telegram_sessions:
+  caddy_data:
+  caddy_config:

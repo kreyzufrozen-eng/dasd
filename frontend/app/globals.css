@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --primary: 222 47% 11%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 47% 11%;
+
+    --radius: 0.5rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 222 47% 7%;
+      --foreground: 210 40% 98%;
+
+      --card: 222 47% 9%;
+      --card-foreground: 210 40% 98%;
+
+      --primary: 210 40% 98%;
+      --primary-foreground: 222 47% 11%;
+
+      --secondary: 217 33% 17%;
+      --secondary-foreground: 210 40% 98%;
+
+      --muted: 217 33% 17%;
+      --muted-foreground: 215 20% 65%;
+
+      --accent: 217 33% 17%;
+      --accent-foreground: 210 40% 98%;
+
+      --destructive: 0 62% 30%;
+      --destructive-foreground: 210 40% 98%;
+
+      --border: 217 33% 20%;
+      --input: 217 33% 20%;
+      --ring: 213 27% 84%;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* "Liquid glass" material: blurred/saturated translucent panel with a
+     hairline highlight along the top edge and a soft contact shadow, so it
+     reads as a pane of glass floating above the page rather than a flat
+     tinted rectangle. Used by the floating nav bar (components/nav.tsx). */
+  .glass-panel {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--foreground) / 0.08),
+      inset 0 0 0 1px hsl(var(--foreground) / 0.05),
+      0 12px 32px -12px hsl(220 60% 2% / 0.45);
+  }
+
+  .glass-pill {
+    background: hsl(var(--foreground) / 0.05);
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.08);
+  }
+  .glass-pill:hover {
+    background: hsl(var(--foreground) / 0.09);
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
