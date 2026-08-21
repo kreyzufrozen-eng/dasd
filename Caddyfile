@@ -1,4 +1,14 @@
 readhunter.ru, www.readhunter.ru {
+	# The frontend has no `'use server'` actions anywhere in its code, so a
+	# request carrying Next-Action is never legitimate here — only scanners
+	# probing the generic Next.js Server Actions bug class send it. Next.js
+	# 14.2.15's own handling of an unrecognized action id crashes the whole
+	# process (TypeError: Cannot read properties of undefined (reading
+	# 'workers')) instead of returning a clean error, which turned internet
+	# background-noise scanning into a repeating outage. Reject before it
+	# ever reaches the app.
+	@serverAction header Next-Action *
+	respond @serverAction 400
 	reverse_proxy frontend:3000
 }
 
