@@ -1,8 +1,11 @@
 """aiogram bot entrypoint — the `bot` service in docker-compose."""
 import asyncio
+import time
+from typing import Awaitable, Callable
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.exceptions import TelegramNetworkError
 
 from app.bot.handlers import router
 from app.bot.public_handlers import public_router
@@ -11,6 +14,47 @@ from app.core.logging import configure_logging, get_logger
 
 configure_logging()
 logger = get_logger(__name__)
+
+# start_polling() calls bot.get_me() before entering its own polling loop —
+# if Telegram is unreachable (proxy down, network blip) that call raises
+# TelegramNetworkError and start_polling() exits immediately, so without a
+# retry here docker-compose's `restart: unless-stopped` would restart the
+# whole container every few seconds for as long as the outage lasts. Retrying
+# in-process with backoff avoids hammering Telegram/the proxy and keeps the
+# container itself stable and easy to monitor (one long-lived process,
+# not a restart loop). Other TelegramAPIError subtypes (bad token, bot
+# blocked, etc.) are left to propagate and crash — those need a human, not
+# a retry.
+INITIAL_BACKOFF_SECONDS = 5
+MAX_BACKOFF_SECONDS = 300
+# A connection that survives at least this long counts as "recovered" for
+# backoff purposes, so a brief blip doesn't leave the delay ratcheted up at
+# MAX_BACKOFF_SECONDS for the next unrelated outage.
+BACKOFF_RESET_AFTER_SECONDS = 60
+
+
+async def poll_with_backoff(start_polling: Callable[[], Awaitable[None]]) -> None:
+    """Calls start_polling() repeatedly, backing off exponentially between
+    attempts each time it raises TelegramNetworkError, instead of letting
+    that exception exit the process (see module docstring above)."""
+    backoff = INITIAL_BACKOFF_SECONDS
+    while True:
+        started_at = time.monotonic()
+        try:
+            logger.info("ReadHunter bot starting polling")
+            await start_polling()
+            return  # normal shutdown (e.g. SIGTERM), not an error
+        except TelegramNetworkError as exc:
+            if time.monotonic() - started_at > BACKOFF_RESET_AFTER_SECONDS:
+                backoff = INITIAL_BACKOFF_SECONDS
+            logger.warning(
+                "Telegram unreachable (%s) — retrying in %ss. Check "
+                "TELEGRAM_PROXY_URL / proxy server if this persists.",
+                exc,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, MAX_BACKOFF_SECONDS)
 
 
 async def main() -> None:
@@ -39,9 +83,8 @@ async def main() -> None:
     dispatcher.include_router(public_router)
     dispatcher.include_router(router)
 
-    logger.info("ReadHunter bot starting polling")
     try:
-        await dispatcher.start_polling(bot)
+        await poll_with_backoff(lambda: dispatcher.start_polling(bot))
     finally:
         await bot.session.close()
 
