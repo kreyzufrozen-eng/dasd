@@ -90,6 +90,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      xray-proxy:
+        condition: service_started
 
   bot:
     build:
@@ -104,6 +106,27 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      xray-proxy:
+        condition: service_started
+
+  # Local SOCKS5 endpoint (reachable only as `xray-proxy:1080` from other
+  # containers on this network, never published to the host or internet)
+  # that tunnels out through VLESS+Reality to a VPS outside the RF network
+  # — some RF datacenter IPs have plain TLS to Telegram's own servers
+  # selectively dropped by network-level DPI even though general internet
+  # access is unaffected (see SECURITY_INCIDENT_RESPONSE.md); Reality
+  # disguises the tunnel's handshake as an ordinary TLS connection to a
+  # real, unrelated site, unlike a bare SOCKS5/HTTP proxy which has an
+  # easily fingerprinted protocol signature. bot/worker point
+  # TELEGRAM_PROXY_URL at this service — see xray-client-config.example.json
+  # for the config shape; the real xray-client-config.json (with the
+  # server's Reality keys/UUID) is deploy-time-only, never committed.
+  xray-proxy:
+    image: teddysun/xray:latest
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - ./xray-client-config.json:/etc/xray/config.json:ro
 
   frontend:
     build:

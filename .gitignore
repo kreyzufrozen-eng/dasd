@@ -21,3 +21,8 @@ frontend/out/
 # Any env variant except the example template
 .env.*
 !.env.example
+
+# Xray client config holds a live Reality private key/UUID — deploy-time
+# only, created directly on the server; xray-client-config.example.json
+# (tracked) documents the shape.
+xray-client-config.json
