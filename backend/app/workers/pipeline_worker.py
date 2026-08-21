@@ -21,6 +21,7 @@ import signal
 from typing import Optional
 
 from aiogram import Bot
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.ai.factory import get_ai_provider
 from app.bot.notifier import LeadNotifier
@@ -276,7 +277,12 @@ async def run_lead_pipeline() -> None:
         # from _resolve_notification_chat_id (the owner's own linked
         # Telegram, falling back to NOTIFICATION_CHAT_ID if unset/unlinked).
         if settings.BOT_TOKEN:
-            bot = Bot(token=settings.BOT_TOKEN)
+            proxy_session = (
+                AiohttpSession(proxy=settings.TELEGRAM_PROXY_URL)
+                if settings.TELEGRAM_PROXY_URL
+                else None
+            )
+            bot = Bot(token=settings.BOT_TOKEN, session=proxy_session)
             notifier = LeadNotifier(bot)
         else:
             logger.info(

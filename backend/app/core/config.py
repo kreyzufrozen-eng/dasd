@@ -1,7 +1,9 @@
 """Application configuration loaded from environment variables (.env)."""
 from functools import lru_cache
 from typing import Optional
+from urllib.parse import urlsplit
 
+import socks
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -76,6 +78,16 @@ class Settings(BaseSettings):
     # links for the "Войти через Telegram" flow (app/bot/public_handlers.py).
     TELEGRAM_BOT_USERNAME: Optional[str] = None
 
+    # --- Outbound proxy for Telegram traffic ---
+    # Some hosting locations (notably RU datacenter IPs) have TLS to
+    # Telegram's own servers selectively blocked by network-level DPI even
+    # though general internet access works fine — ICMP to Telegram's IPs
+    # succeeds but the HTTPS/MTProto handshake itself gets dropped. Set this
+    # to route both the Bot API client and the Telethon client through a
+    # SOCKS5 proxy hosted outside the affected jurisdiction. Empty (default)
+    # = connect directly. Format: socks5://[user:pass@]host:port
+    TELEGRAM_PROXY_URL: Optional[str] = None
+
     # --- Public site (used in bot messages: /privacy link, etc.) ---
     # Bare IP for now — see PROJECT_AUDIT.md, no domain/TLS yet. Update
     # once a real domain exists; nothing else in the login flow depends on
@@ -125,6 +137,27 @@ class Settings(BaseSettings):
         if value == "":
             return None
         return value
+
+    @property
+    def telethon_proxy(self) -> Optional[tuple]:
+        """PySocks-style proxy tuple for Telethon, parsed from TELEGRAM_PROXY_URL."""
+        if not self.TELEGRAM_PROXY_URL:
+            return None
+        parts = urlsplit(self.TELEGRAM_PROXY_URL)
+        proxy_types = {"socks5": socks.SOCKS5, "socks4": socks.SOCKS4, "http": socks.HTTP}
+        if parts.scheme not in proxy_types:
+            raise ValueError(
+                f"Unsupported TELEGRAM_PROXY_URL scheme {parts.scheme!r}; "
+                "use socks5://, socks4://, or http://"
+            )
+        return (
+            proxy_types[parts.scheme],
+            parts.hostname,
+            parts.port,
+            True,
+            parts.username,
+            parts.password,
+        )
 
     @property
     def allowed_source_list(self) -> list[str]:

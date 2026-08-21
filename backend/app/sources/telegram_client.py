@@ -17,7 +17,12 @@ def create_telegram_client(settings: Settings) -> TelegramClient:
         )
 
     session_name = settings.TELEGRAM_SESSION or "leadhunter_session"
-    return TelegramClient(session_name, settings.TELEGRAM_API_ID, settings.TELEGRAM_API_HASH)
+    return TelegramClient(
+        session_name,
+        settings.TELEGRAM_API_ID,
+        settings.TELEGRAM_API_HASH,
+        proxy=settings.telethon_proxy,
+    )
 
 
 def is_source_allowed(external_identifier: str, settings: Settings) -> bool:

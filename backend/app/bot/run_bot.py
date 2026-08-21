@@ -2,6 +2,7 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.bot.handlers import router
 from app.bot.public_handlers import public_router
@@ -27,7 +28,8 @@ async def main() -> None:
         await asyncio.Event().wait()
         return
 
-    bot = Bot(token=settings.BOT_TOKEN)
+    session = AiohttpSession(proxy=settings.TELEGRAM_PROXY_URL) if settings.TELEGRAM_PROXY_URL else None
+    bot = Bot(token=settings.BOT_TOKEN, session=session)
     dispatcher = Dispatcher()
     # public_router first: its CommandStart(deep_link=True) handler must
     # see a deep-link /start (from *any* sender, including the owner
