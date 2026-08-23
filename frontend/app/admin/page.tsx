@@ -14,13 +14,22 @@ import {
 
 import {
   ApiError,
+  createLegalDocument,
+  getAdminLegalDocuments,
   getAdminOverview,
   getAdminUserProfiles,
   getAdminUsers,
+  publishLegalDocument,
   updateAdminUser,
 } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import type { AdminOverview, AdminSearchProfileDetail, AdminUserRead } from '@/lib/types';
+import type {
+  AdminOverview,
+  AdminSearchProfileDetail,
+  AdminUserRead,
+  LegalDocumentRead,
+  LegalDocumentType,
+} from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 import { StatCard } from '@/components/stat-card';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +41,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -40,6 +51,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+
+const LEGAL_DOCUMENT_TYPES: { value: LegalDocumentType; label: string }[] = [
+  { value: 'privacy_policy', label: 'Политика обработки персональных данных' },
+  { value: 'terms_of_service', label: 'Пользовательское соглашение' },
+  { value: 'cookie_policy', label: 'Политика использования cookies' },
+];
 
 function formatLastLogin(value: string | null): string {
   if (!value) return 'Ни разу';
@@ -58,6 +76,15 @@ export default function AdminPage() {
   const [profiles, setProfiles] = React.useState<AdminSearchProfileDetail[]>([]);
   const [profilesLoading, setProfilesLoading] = React.useState(false);
   const [profilesError, setProfilesError] = React.useState<string | null>(null);
+
+  const [legalType, setLegalType] = React.useState<LegalDocumentType>('privacy_policy');
+  const [legalDocs, setLegalDocs] = React.useState<LegalDocumentRead[]>([]);
+  const [legalLoading, setLegalLoading] = React.useState(false);
+  const [legalError, setLegalError] = React.useState<string | null>(null);
+  const [legalBusyId, setLegalBusyId] = React.useState<number | 'create' | null>(null);
+  const [draftVersion, setDraftVersion] = React.useState('');
+  const [draftTitle, setDraftTitle] = React.useState('');
+  const [draftContent, setDraftContent] = React.useState('');
 
   React.useEffect(() => {
     if (!authLoading && currentUser && !currentUser.is_admin) {
@@ -86,6 +113,59 @@ export default function AdminPage() {
       fetchAll();
     }
   }, [currentUser, fetchAll]);
+
+  const fetchLegalDocs = React.useCallback((type: LegalDocumentType) => {
+    setLegalLoading(true);
+    setLegalError(null);
+    getAdminLegalDocuments(type)
+      .then(setLegalDocs)
+      .catch((err: unknown) => {
+        setLegalError(err instanceof ApiError ? err.message : 'Не удалось загрузить документы');
+      })
+      .finally(() => setLegalLoading(false));
+  }, []);
+
+  React.useEffect(() => {
+    if (currentUser?.is_admin) {
+      fetchLegalDocs(legalType);
+    }
+  }, [currentUser, legalType, fetchLegalDocs]);
+
+  async function handleCreateDraft(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draftVersion.trim() || !draftTitle.trim() || !draftContent.trim()) return;
+    setLegalBusyId('create');
+    setLegalError(null);
+    try {
+      await createLegalDocument({
+        type: legalType,
+        version: draftVersion.trim(),
+        title: draftTitle.trim(),
+        content: draftContent,
+      });
+      setDraftVersion('');
+      setDraftTitle('');
+      setDraftContent('');
+      fetchLegalDocs(legalType);
+    } catch (err) {
+      setLegalError(err instanceof ApiError ? err.message : 'Не удалось создать черновик');
+    } finally {
+      setLegalBusyId(null);
+    }
+  }
+
+  async function handlePublish(doc: LegalDocumentRead) {
+    setLegalBusyId(doc.id);
+    setLegalError(null);
+    try {
+      await publishLegalDocument(doc.id);
+      fetchLegalDocs(legalType);
+    } catch (err) {
+      setLegalError(err instanceof ApiError ? err.message : 'Не удалось опубликовать документ');
+    } finally {
+      setLegalBusyId(null);
+    }
+  }
 
   async function handleToggleAdmin(target: AdminUserRead) {
     setBusyId(target.id);
@@ -277,6 +357,125 @@ export default function AdminPage() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold text-foreground">
+            Юридические документы
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-sm">
+            <Select
+              value={legalType}
+              onChange={(e) => setLegalType(e.target.value as LegalDocumentType)}
+            >
+              {LEGAL_DOCUMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {legalError && (
+            <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              {legalError}
+            </p>
+          )}
+
+          {legalLoading ? (
+            <p className="text-sm text-muted-foreground">Загрузка…</p>
+          ) : legalDocs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Для этого типа ещё нет ни одной версии — создайте первую ниже.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Версия</TableHead>
+                  <TableHead>Заголовок</TableHead>
+                  <TableHead>Создан</TableHead>
+                  <TableHead>Опубликован</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="text-right">Действия</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {legalDocs.map((doc) => (
+                  <TableRow key={doc.id}>
+                    <TableCell className="font-medium">{doc.version}</TableCell>
+                    <TableCell className="text-muted-foreground">{doc.title}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDate(doc.created_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {doc.published_at ? formatDate(doc.published_at) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={doc.is_active ? 'success' : 'outline'}>
+                        {doc.is_active ? 'Активен' : 'Черновик'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={doc.is_active || legalBusyId === doc.id}
+                        onClick={() => handlePublish(doc)}
+                      >
+                        {doc.is_active ? 'Опубликован' : 'Опубликовать'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          <form onSubmit={handleCreateDraft} className="space-y-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">Новая версия</h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Версия (например, 1.0)</label>
+                <Input
+                  value={draftVersion}
+                  onChange={(e) => setDraftVersion(e.target.value)}
+                  placeholder="1.0"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Заголовок</label>
+                <Input
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  placeholder={LEGAL_DOCUMENT_TYPES.find((t) => t.value === legalType)?.label}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Текст документа</label>
+              <Textarea
+                value={draftContent}
+                onChange={(e) => setDraftContent(e.target.value)}
+                rows={12}
+                placeholder="Полный текст документа…"
+                required
+              />
+            </div>
+            <Button type="submit" disabled={legalBusyId === 'create'} size="sm">
+              {legalBusyId === 'create' ? 'Сохранение…' : 'Сохранить черновик'}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Черновик не виден пользователям, пока вы не нажмёте «Опубликовать» — публикация
+              автоматически снимает предыдущую активную версию этого типа.
+            </p>
+          </form>
         </CardContent>
       </Card>
 

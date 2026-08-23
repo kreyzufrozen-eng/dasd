@@ -26,6 +26,7 @@ import type {
   SearchProfileUpdate,
   Source,
   SourceCatalogEntry,
+  LegalDocumentCreate,
   LegalDocumentRead,
   LegalDocumentType,
   SourceCreate,
@@ -472,6 +473,22 @@ export function getAdminUserProfiles(userId: number): Promise<AdminSearchProfile
 // ---- Legal documents (public) ----
 export function getActiveLegalDocument(type: LegalDocumentType): Promise<LegalDocumentRead> {
   return request(`/api/legal/${type}`);
+}
+
+// ---- Legal documents (admin) ----
+export function getAdminLegalDocuments(type: LegalDocumentType): Promise<LegalDocumentRead[]> {
+  return request(`/api/admin/legal/${type}`);
+}
+
+export function createLegalDocument(data: LegalDocumentCreate): Promise<LegalDocumentRead> {
+  return request('/api/admin/legal', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function publishLegalDocument(id: number): Promise<LegalDocumentRead> {
+  return request(`/api/admin/legal/${id}/publish`, { method: 'POST' });
 }
 
 export { ApiError };

@@ -173,6 +173,9 @@ export interface AnalyticsOverview {
   today_leads: number;
   hot_leads: number;
   converted_leads: number;
+  hidden_demand_leads: number;
+  active_sources: number;
+  avg_match_score: number;
   leads_last_7_days: AnalyticsPoint[];
   leads_last_30_days: AnalyticsPoint[];
 }
@@ -487,4 +490,11 @@ export interface LegalDocumentRead {
   published_at: string | null;
   is_active: boolean;
   created_at: string;
+}
+
+export interface LegalDocumentCreate {
+  type: LegalDocumentType;
+  version: string;
+  title: string;
+  content: string;
 }
