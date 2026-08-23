@@ -7,6 +7,7 @@ import {
   addCustomProfileSource,
   ApiError,
   attachProfileSource,
+  bulkAttachProfileSources,
   detachProfileSource,
   getProfileSources,
   getSourceCatalog,
@@ -47,6 +48,7 @@ export default function SourcesPage() {
   const [catalogOpen, setCatalogOpen] = React.useState(false);
   const [catalog, setCatalog] = React.useState<SourceCatalogEntry[]>([]);
   const [catalogLoading, setCatalogLoading] = React.useState(false);
+  const [selectAllBusy, setSelectAllBusy] = React.useState(false);
 
   const [addingCustom, setAddingCustom] = React.useState(false);
   const [customUrl, setCustomUrl] = React.useState('');
@@ -101,6 +103,27 @@ export default function SourcesPage() {
       setError(err instanceof ApiError ? err.message : 'Не удалось изменить источник');
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleSelectAll() {
+    if (!activeProfileId) return;
+    const notYetAdded = catalog.filter((c) => !c.already_added).map((c) => c.id);
+    if (notYetAdded.length === 0) return;
+    setSelectAllBusy(true);
+    try {
+      await bulkAttachProfileSources(activeProfileId, notYetAdded);
+      const added = new Set(notYetAdded);
+      setCatalog((cur) =>
+        cur.map((c) =>
+          added.has(c.id) ? { ...c, already_added: true, enabled_for_profile: true } : c
+        )
+      );
+      fetchLinks();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось добавить источники');
+    } finally {
+      setSelectAllBusy(false);
     }
   }
 
@@ -295,9 +318,21 @@ export default function SourcesPage() {
             <CardTitle className="text-sm font-semibold text-foreground">
               Каталог источников
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setCatalogOpen(false)}>
-              Закрыть
-            </Button>
+            <div className="flex gap-2">
+              {catalog.some((c) => !c.already_added) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={selectAllBusy}
+                  onClick={handleSelectAll}
+                >
+                  {selectAllBusy ? 'Добавляем…' : 'Выбрать все'}
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setCatalogOpen(false)}>
+                Закрыть
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {catalogLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
